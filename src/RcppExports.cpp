@@ -11,6 +11,72 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// c_initialize1
+double c_initialize1(NumericVector Data, IntegerVector DIMS, NumericVector Yy, double XSCALE, double BETAIN, double BETAOUT, NumericVector WW);
+RcppExport SEXP _dmlpm_c_initialize1(SEXP DataSEXP, SEXP DIMSSEXP, SEXP YySEXP, SEXP XSCALESEXP, SEXP BETAINSEXP, SEXP BETAOUTSEXP, SEXP WWSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type Data(DataSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type DIMS(DIMSSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type Yy(YySEXP);
+    Rcpp::traits::input_parameter< double >::type XSCALE(XSCALESEXP);
+    Rcpp::traits::input_parameter< double >::type BETAIN(BETAINSEXP);
+    Rcpp::traits::input_parameter< double >::type BETAOUT(BETAOUTSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type WW(WWSEXP);
+    rcpp_result_gen = Rcpp::wrap(c_initialize1(Data, DIMS, Yy, XSCALE, BETAIN, BETAOUT, WW));
+    return rcpp_result_gen;
+END_RCPP
+}
+// c_initialize1_old
+double c_initialize1_old(arma::cube X, arma::cube Y, double XSCALE, double BETAIN, double BETAOUT, arma::colvec WW);
+RcppExport SEXP _dmlpm_c_initialize1_old(SEXP XSEXP, SEXP YSEXP, SEXP XSCALESEXP, SEXP BETAINSEXP, SEXP BETAOUTSEXP, SEXP WWSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::cube >::type X(XSEXP);
+    Rcpp::traits::input_parameter< arma::cube >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< double >::type XSCALE(XSCALESEXP);
+    Rcpp::traits::input_parameter< double >::type BETAIN(BETAINSEXP);
+    Rcpp::traits::input_parameter< double >::type BETAOUT(BETAOUTSEXP);
+    Rcpp::traits::input_parameter< arma::colvec >::type WW(WWSEXP);
+    rcpp_result_gen = Rcpp::wrap(c_initialize1_old(X, Y, XSCALE, BETAIN, BETAOUT, WW));
+    return rcpp_result_gen;
+END_RCPP
+}
+// c_initialize1_grad
+arma::colvec c_initialize1_grad(NumericVector Data, IntegerVector DIMS, NumericVector Yy, double XSCALE, double BETAIN, double BETAOUT, NumericVector WW);
+RcppExport SEXP _dmlpm_c_initialize1_grad(SEXP DataSEXP, SEXP DIMSSEXP, SEXP YySEXP, SEXP XSCALESEXP, SEXP BETAINSEXP, SEXP BETAOUTSEXP, SEXP WWSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type Data(DataSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type DIMS(DIMSSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type Yy(YySEXP);
+    Rcpp::traits::input_parameter< double >::type XSCALE(XSCALESEXP);
+    Rcpp::traits::input_parameter< double >::type BETAIN(BETAINSEXP);
+    Rcpp::traits::input_parameter< double >::type BETAOUT(BETAOUTSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type WW(WWSEXP);
+    rcpp_result_gen = Rcpp::wrap(c_initialize1_grad(Data, DIMS, Yy, XSCALE, BETAIN, BETAOUT, WW));
+    return rcpp_result_gen;
+END_RCPP
+}
+// c_initialize1_grad_old
+arma::vec c_initialize1_grad_old(arma::cube X, arma::cube Y, double XSCALE, double BETAIN, double BETAOUT, arma::colvec WW);
+RcppExport SEXP _dmlpm_c_initialize1_grad_old(SEXP XSEXP, SEXP YSEXP, SEXP XSCALESEXP, SEXP BETAINSEXP, SEXP BETAOUTSEXP, SEXP WWSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< arma::cube >::type X(XSEXP);
+    Rcpp::traits::input_parameter< arma::cube >::type Y(YSEXP);
+    Rcpp::traits::input_parameter< double >::type XSCALE(XSCALESEXP);
+    Rcpp::traits::input_parameter< double >::type BETAIN(BETAINSEXP);
+    Rcpp::traits::input_parameter< double >::type BETAOUT(BETAOUTSEXP);
+    Rcpp::traits::input_parameter< arma::colvec >::type WW(WWSEXP);
+    rcpp_result_gen = Rcpp::wrap(c_initialize1_grad_old(X, Y, XSCALE, BETAIN, BETAOUT, WW));
+    return rcpp_result_gen;
+END_RCPP
+}
 // pairwise_distance_vector_cpp
 arma::rowvec pairwise_distance_vector_cpp(arma::mat Z, int i);
 RcppExport SEXP _dmlpm_pairwise_distance_vector_cpp(SEXP ZSEXP, SEXP iSEXP) {
@@ -43,6 +109,10 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_dmlpm_c_initialize1", (DL_FUNC) &_dmlpm_c_initialize1, 7},
+    {"_dmlpm_c_initialize1_old", (DL_FUNC) &_dmlpm_c_initialize1_old, 6},
+    {"_dmlpm_c_initialize1_grad", (DL_FUNC) &_dmlpm_c_initialize1_grad, 7},
+    {"_dmlpm_c_initialize1_grad_old", (DL_FUNC) &_dmlpm_c_initialize1_grad_old, 6},
     {"_dmlpm_pairwise_distance_vector_cpp", (DL_FUNC) &_dmlpm_pairwise_distance_vector_cpp, 2},
     {"_dmlpm_log_posterior_it_cpp", (DL_FUNC) &_dmlpm_log_posterior_it_cpp, 8},
     {NULL, NULL, 0}

@@ -131,7 +131,7 @@ DMLPM <- function(num_samples = 2e3, burn = 10e3,
     # Sample and update using M-H:
     for (i in 2:(burn + iters)) { # TODO maybe change i to iter, frees up i for use later
       # Print progress
-      if(i %% 10 == 0) {
+      if(i %% 100 == 0) {
         print(paste0("i = ", i, " (", Sys.time(), ")"))
       }
       if(i %% 1000 == 0) {

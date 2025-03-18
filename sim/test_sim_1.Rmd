@@ -3,25 +3,26 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-```{r}
+```{r setup}
 library(dmlpm)
 library(tidyverse)
 library(Rfast)
 library(foreach)
+library(vegan)
+library(ggiraph)
 ```
 
-
-# Example 2.1: n = 25, T = 6, K = 3
+# Example 1: n = 25, T = 25, K = 5
 
 Generate data:
 
 ```{r fig.height=4, fig.width=12}
 # Generate a random Z matrix:
-set.seed(3)
+set.seed(4)
 d <- 2 # no. of latent dimensions
 n <- 25 # nodes
-K <- 3 # Layers
-TT <- 6 # T time points
+K <- 5 # Layers
+TT <- 25 # T time points
 
 # Initialise the latent positions, Z_1, which are the same for each layer:
 sigma2_0 <- 25 # the variance for the initial positions (tau in Sewell thesis)
@@ -31,7 +32,7 @@ for(i in 1:n)
     Z[i, d, 1] = rnorm(1, 0, sd = sqrt(sigma2_0))
 
 # The remaining time points (1 < t <= T) are updated with Markovian dependence (again, same for each layer):
-sigma2_z <- 1 # the amount of perturbation (SD) to give to the previous time point (sigma in Sewell thesis)
+sigma2_z <- 0.25^2 # the amount of perturbation (SD) to give to the previous time point (sigma in Sewell thesis)
 for(t in 2:TT)
   for(i in 1:n)
     for(d in 1:2)
@@ -39,9 +40,9 @@ for(t in 2:TT)
 
 
 # Dynamic alpha (use a random walk to generate the alphas):
-sigma2_alpha <- 1
+sigma2_alpha <- 0.25^2
 alpha <- matrix(NA, nrow = K, ncol = TT)
-alpha[ , 1] <- c(5, 8, 10) # initial values (t = 1)
+alpha[ , 1] <- round(runif(K, 5, 10)) # initial values (t = 1)
 for(t in 2:TT) {
   alpha[ , t] <- rnorm(K, mean = alpha[ , t - 1], sd = sqrt(sigma2_alpha))
 }
@@ -109,11 +110,11 @@ for(t in 2:TT) {                            # t > 1
 }
 
 fit <- DMLPM(
-  num_samples = 1e2, burn = 1e2,
-  thin = 1, post_pred_thin_factor = 1e6, # large ppthin to avoid doing it, will fix later, it's too slow
+  num_samples = 1e3, burn = 1e4,
+  thin = 10, post_pred_thin_factor = 1e6, # large ppthin to avoid doing it, will fix later, it's too slow
   num_chains = 1,
   Y = Y,
-  sigma2_0 = sigma2_0, sigma2_a = 1, sigma2_z = 0.001, 
+  sigma2_0 = sigma2_0, sigma2_a = 100, sigma2_z = 0.01^2, 
   alpha_0 = matrix(1, nrow = K, ncol = TT), Z_0 = Z_0, #array(0, dim = c(n, 2, dim(Z)[3])),
   eta_alpha = 0.1, eta_z = 0.1,
   delta_alpha = 0.5, delta_z = 0.5,
@@ -167,7 +168,7 @@ walk(1:TT, function(t) print(paste0("t = ", t, ": ", round(vegan::protest(Z[ , ,
 ### Log-posterior
 
 ```{r echo=FALSE, fig.height=6, fig.width=12}
-chain <- 2#which.max(fit$map$i_map$log_posterior_max)
+chain <- which.max(fit$map$i_map$log_posterior_max)
 chain
 df <- data.frame(i = 1:fit$num_samples, log_posterior = fit$mcmc_chains[[chain]]$log_posterior_thin)
 log_posterior_true <- log_posterior(Y = Y, Z = Z, alpha = alpha, sigma2_0 = sigma2_0, sigma2_a = 100, sigma2_z = sigma2_z)
@@ -193,8 +194,18 @@ Need to update the Rhat functions first to use the plot_alpha_posterior function
 ```
 
 ```{r}
-alpha
+alpha-
 apply(fit$mcmc_chains[[chain]]$alpha_out_thin, c(1, 2), mean)
+```
+
+```{r}
+bind_rows(list(true = data.frame(cbind(k = c(1:K), alpha)), estimated = data.frame(cbind(k = 1:K, apply(fit$mcmc_chains[[chain]]$alpha_out_thin, c(1, 2), mean)))), .id = "set") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "t", values_to = "alpha_kt") %>% 
+  mutate(t = as.numeric(str_replace(t, "V", "")) - 1) %>% 
+  mutate(set_k = str_c(set, k)) %>% 
+  ggplot() +
+  geom_line(aes(t, alpha_kt, group = set_k, colour = set)) +
+  facet_wrap(~k, scales = "fixed")
 ```
 
 
@@ -332,51 +343,74 @@ and this code for the comparison.
 ```
 
 
-## Posterior Predictive Checks
+# Example 2: using Sewell init
 
-No. of edges (points in plot):
 
 ```{r}
-choose(n, 2) * k * TT 
+library(dmlpm)
+Z_0_sewell <- initialise_Z(Y, d = 2)
 ```
 
-```{r echo=FALSE, fig.height=6, fig.width=12}
-Y_hat <- data.frame()
 
-for(k in 1:K) {
-  for(t in 1:TT) {
-    Y_hat <- rbind(Y_hat, # previous data frame
-                   cbind(set = "sim", t, k, fit$mcmc_chains[[1]]$Y_hat[ , , t, k]), # simulated data for time t and layer k (the post. pred samples)
-                   cbind(set = "obs", t, k, t(as.matrix(Y[ , , t, k] %>% upper_tri()))))
-  }
+```{r echo=FALSE, fig.height=6, fig.width=8}
+Z_0_sewell <- initialise_Z(Y, d = 2)
+
+# Construct the nT x 2 reference matrix of all the stacked (true) Z_t matrices:
+Z_ref <- matrix(NA, nrow = n*TT, ncol = 2)
+for(t in 1:TT) {
+  Z_ref[((t - 1)*n + 1):(t*n), ] <- Z[ , , t] # These indexes look weird but they are correct:
 }
 
-p1 <- pivot_longer(Y_hat, cols = starts_with("V")) %>% 
-  mutate(value = as.numeric(value)) %>% 
-  rename(edge = name) %>% 
-  group_by(set, t, k, edge) %>% 
-  summarise(value = mean(value)) %>% 
-  pivot_wider(names_from = set, values_from = value) %>% 
-  mutate(diff = abs(obs - sim)) %>% 
-  ggplot() +
-  geom_abline(alpha = 0.5) +
-  geom_point(aes(obs, sim), colour = "steelblue", alpha = 0.25)
+Z_stack_sewell <- matrix(NA, nrow = n*TT, ncol = 2)
+for(t in 1:TT) {
+  Z_stack_sewell[((t - 1)*n + 1):(t*n), ] <- Z_0_sewell[ , , t] # These indexes look weird but they are correct:
+}
+Z_stack_sewell <- procrustes(X = Z_ref, Y = Z_stack_sewell, scale = FALSE)$Yrot
+# Unstack:
+Z_0_sewell_rotated <- array(NA, dim = dim(Z_0_sewell))
+for(t in 1:TT) {
+  Z_0_sewell_rotated[ , , t] <- Z_stack_sewell[((t - 1)*n + 1):(t*n), ] 
+}
 
-p2 <- pivot_longer(Y_hat, cols = starts_with("V")) %>% 
-  mutate(value = as.numeric(value)) %>% 
-  rename(edge = name) %>% 
-  group_by(set, t, k, edge) %>% 
-  summarise(value = mean(value)) %>% 
-  pivot_wider(names_from = set, values_from = value) %>% 
-  mutate(diff = abs(obs - sim)) %>% 
-  ggplot() +
-  geom_abline(alpha = 0.5) +
-  geom_point(aes(obs + 1, sim + 1), colour = "steelblue", alpha = 0.25) +
-  scale_x_log10() +
-  scale_y_log10()
 
-p1 + p2
+df1 <- plyr::alply(Z, .margins = 3) %>% # https://stackoverflow.com/a/20199008
+  map(data.frame) %>% 
+  bind_rows(.id = "t") %>% 
+  mutate(t = as.numeric(t), i = rep(1:n, dim(Z)[3])) %>% 
+  set_names(c("t", "z1", "z2", "i")) %>% 
+  mutate(set = "true")
+
+df2 <- plyr::alply(Z_0_sewell_rotated, .margins = 3) %>% # https://stackoverflow.com/a/20199008
+  map(data.frame) %>% 
+  bind_rows(.id = "t") %>% 
+  mutate(t = as.numeric(t), i = rep(1:n, dim(Z)[3])) %>% 
+  set_names(c("t", "z1", "z2", "i")) %>% 
+  mutate(set = "estimated")
+
+p <- rbind(df1, df2) %>% 
+  mutate(set = factor(set, levels = c("true", "estimated"))) %>% 
+  ggplot() +
+  geom_path_interactive(aes(z1, z2, group = i, colour = t, tooltip = paste0("node ", i), data_id = paste0("node ", i)),
+                        hover_css = "stroke:indianred;stroke-width:2", 
+                        arrow = arrow(length = unit(1.5, "mm"))) +
+  facet_wrap(~set, )
+girafe(ggobj = p, width_svg = 12, height_svg = 6) %>% 
+  girafe_options(opacity = 0.2)
+
+
+for(t in 1:TT) {
+  print((vegan::protest(Z_0_sewell[ , , t], Z[ , , t])$t0) %>% round(3))
+}
+
+
+alpha_0 <- initialise_alpha(Y, Z_0_sewell)
+
+# Compare using plot from the the posterior comparioson below:
+bind_rows(list(true = data.frame(cbind(k = c(1:K), alpha)), initial = data.frame(cbind(k = 1:K, alpha_0))), .id = "set") %>% 
+  pivot_longer(cols = starts_with("V"), names_to = "t", values_to = "alpha_kt") %>% 
+  mutate(t = as.numeric(str_replace(t, "V", "")) - 1) %>% 
+  mutate(set_k = str_c(set, k)) %>% 
+  ggplot() +
+  geom_line(aes(t, alpha_kt, group = set_k, colour = set)) +
+  facet_wrap(~k, scales = "fixed")
 ```
-
-
-
