@@ -197,7 +197,7 @@ initialise_alpha <- function(Y, Z) {
   alpha_0 <- matrix(NA, nrow = K, ncol = TT)
   for(t in 1:TT) {
     for(k in 1:K) {
-      alpha_0[k, t] <- netpois(Y[ , , t, k], Dist(Z_0_sewell[ , , t]))[1]
+      alpha_0[k, t] <- netpois(Y[ , , t, k], Dist(Z[ , , t]))[1]
     }
   }
   alpha_0
