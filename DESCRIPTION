@@ -14,3 +14,8 @@ Suggests:
 Config/testthat/edition: 3
 URL: https://github.com/brianhassett/dmlpm
 BugReports: https://github.com/brianhassett/dmlpm/issues
+LinkingTo: 
+    Rcpp,
+    RcppArmadillo
+Imports: 
+    Rcpp

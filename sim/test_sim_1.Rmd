@@ -1,0 +1,382 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dmlpm)
+library(tidyverse)
+library(Rfast)
+library(foreach)
+```
+
+
+# Example 2.1: n = 25, T = 6, K = 3
+
+Generate data:
+
+```{r fig.height=4, fig.width=12}
+# Generate a random Z matrix:
+set.seed(3)
+d <- 2 # no. of latent dimensions
+n <- 25 # nodes
+K <- 3 # Layers
+TT <- 6 # T time points
+
+# Initialise the latent positions, Z_1, which are the same for each layer:
+sigma2_0 <- 25 # the variance for the initial positions (tau in Sewell thesis)
+Z <- array(NA, dim = c(n, 2, TT))
+for(i in 1:n) 
+  for(d in 1:2) 
+    Z[i, d, 1] = rnorm(1, 0, sd = sqrt(sigma2_0))
+
+# The remaining time points (1 < t <= T) are updated with Markovian dependence (again, same for each layer):
+sigma2_z <- 1 # the amount of perturbation (SD) to give to the previous time point (sigma in Sewell thesis)
+for(t in 2:TT)
+  for(i in 1:n)
+    for(d in 1:2)
+      Z[i, d, t] = rnorm(n = 1, mean = Z[i, d, t-1], sd = sqrt(sigma2_z))
+
+
+# Dynamic alpha (use a random walk to generate the alphas):
+sigma2_alpha <- 1
+alpha <- matrix(NA, nrow = K, ncol = TT)
+alpha[ , 1] <- c(5, 8, 10) # initial values (t = 1)
+for(t in 2:TT) {
+  alpha[ , t] <- rnorm(K, mean = alpha[ , t - 1], sd = sqrt(sigma2_alpha))
+}
+#alpha
+# Generate LPM and K x T adjacency matrices, one for each layer and time point:
+
+#Y <- map(1:TT, function(t) LPM_gen(Z[ , , t], alpha)) %>% simplify2array() # maps are too confusing here, switch to for loops over the array
+Y <- array(NA, dim = c(n, n, TT, K))
+for(k in 1:K) {
+  print(paste0("k = ", k))
+  for(t in 1:TT) {
+    Y[ , , t, k] <- LPM_gen_poisson(Z[ , , t], alpha[k, t])
+  }
+}
+
+Y_tk_list <- map(1:TT, function(t) map(1:K, function(k) upper_tri(Y[ , , t, k])))
+Y_list <- lapply(seq(dim(Y)[4]), function(k) Y[ , , , k]) # for Rcpp function
+```
+
+I can plot the network separately for each layer for now:
+
+```{r fig.height=6, fig.width=12}
+for(k in 1:K)
+  print(plot_lpm_dynamic(Y = Y[ , , , k], Z = Z, alpha = alpha[k], center = T) + ggtitle(paste0("Layer ", k)))
+```
+
+I can also plot for each time point:
+
+```{r fig.height=4, fig.width=12}
+for(t in 1:TT)
+  print(plot_lpm_multiview(Y = Y[ , , t, ], Z = Z[ , , t], alpha = alpha, center = T) + ggtitle(paste0("t = ", t)))
+```
+
+
+Plot the paths (same for each layer):
+
+```{r}
+print(plot_dynamic_path(Z) + ggtitle("Path of nodes over time"))
+```
+
+## Fit
+
+R: Run time: 26.16 mins, n = 25, T = 6, K = 3, 4 chains
+Rcpp: Run time: 3.13 mins, n = 25, T = 6, K = 3, 4 chains
+
+Laptop comparing the declaration of arma objects vs straight to row:
+Straight to row:   "Run time: 4.38 mins"
+With declarations: "Run time: 4.54 mins" 
+
+PC comparing the declaration of arma objects vs straight to row:
+Straight to row:   "Run time: 2.3 mins"
+With declarations: "Run time: 3.03 mins"
+
+
+```{r}
+#fit <- readRDS(file = "obj/n25_T6_K3_example_2_1")
+
+# Initialise:
+# (Rotate with reference to the first time point so that they are all in a "similar" orientation)
+# Just use the first layer for now. Later I can try taking the sum across layers or something else.
+Z_0 <- array(0, dim = c(n, 2, dim(Z)[3]))
+Z_0[ , , 1] <- mds_initialise(Y[ , , 1, 1]) # t = 1, K = 1
+for(t in 2:TT) {                            # t > 1
+  Z_0[ , , t] <- vegan::procrustes(Z_0[ , , 1], mds_initialise(Y[ , , t, 1]))$Yrot
+}
+
+fit <- DMLPM(
+  num_samples = 1e2, burn = 1e2,
+  thin = 1, post_pred_thin_factor = 1e6, # large ppthin to avoid doing it, will fix later, it's too slow
+  num_chains = 1,
+  Y = Y,
+  sigma2_0 = sigma2_0, sigma2_a = 1, sigma2_z = 0.001, 
+  alpha_0 = matrix(1, nrow = K, ncol = TT), Z_0 = Z_0, #array(0, dim = c(n, 2, dim(Z)[3])),
+  eta_alpha = 0.1, eta_z = 0.1,
+  delta_alpha = 0.5, delta_z = 0.5,
+  discard = TRUE
+)
+
+# Cache result:
+#saveRDS(object = fit, file = "obj/n25_T6_K3_example_2_1")
+```
+
+
+
+```{r}
+#fit <- readRDS(file = "obj/n25_T6_K3_example_2_1")
+
+# Initialise:
+# (Rotate with reference to the first time point so that they are all in a "similar" orientation)
+# Just use the first layer for now. Later I can try taking the sum across layers or something else.
+Z_0 <- array(0, dim = c(n, 2, dim(Z)[3]))
+Z_0[ , , 1] <- mds_initialise(Y[ , , 1, 1]) # t = 1, K = 1
+for(t in 2:TT) {                            # t > 1
+  Z_0[ , , t] <- vegan::procrustes(Z_0[ , , 1], mds_initialise(Y[ , , t, 1]))$Yrot
+}
+
+fit <- MH_dynamic_multiview(
+  num_samples = 1e3, burn = 5e4,
+  thin = 10, post_pred_thin_factor = 10,
+  num_chains = 4,
+  Y = Y,
+  sigma2_0 = sigma2_0, sigma2_a = 1, sigma2_z = 0.001, 
+  alpha_0 = matrix(1, nrow = K, ncol = TT), Z_0 = Z_0, #array(0, dim = c(n, 2, dim(Z)[3])),
+  eta_alpha = 0.1, eta_z = 0.1,
+  delta_alpha = 0.5, delta_z = 0.5,
+  discard = TRUE
+)
+
+# Cache result:
+#saveRDS(object = fit, file = "obj/n25_T6_K3_example_2_1")
+```
+
+Check just out of interest:
+
+```{r}
+walk(1:TT, function(t) print(paste0("t = ", t, ": ", round(vegan::protest(Z[ , , t], Z_0[ , , t])$t0, 3))))
+```
+
+
+## Post processing
+
+
+### Log-posterior
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+chain <- 2#which.max(fit$map$i_map$log_posterior_max)
+chain
+df <- data.frame(i = 1:fit$num_samples, log_posterior = fit$mcmc_chains[[chain]]$log_posterior_thin)
+log_posterior_true <- log_posterior(Y = Y, Z = Z, alpha = alpha, sigma2_0 = sigma2_0, sigma2_a = 100, sigma2_z = sigma2_z)
+p1 <- ggplot(df) +
+  geom_line(aes(i, log_posterior), colour = "steelblue", linewidth = 0.5, alpha = 0.8, show.legend = F) +
+  labs(x = "i", y = "Log-posterior",
+       title = paste0("Log-posterior after each (full) iteration (num_samples = ", fit$num_samples, ", thin = ", fit$thin, ")"), subtitle = paste0("Log posterior using true values = ", round(log_posterior_true, 1), " (black line)")) +
+  #geom_hline(yintercept = log_posterior_true, col = "black", lty = 2) +
+  theme(plot.title = element_text(size = 12))
+p2 <- ggAcf2(fit$mcmc_chains[[chain]]$log_posterior_thin) +
+  ggtitle("ACF of log-posterior")
+p1 + p2
+mean(fit$mcmc_chains[[chain]]$log_posterior_thin)
+plot_log_posterior(fit, scales = "free")
+```
+
+Need to update the Rhat functions first to use the plot_alpha_posterior function
+
+```{r}
+# fit$K <- K
+# fit$alpha_hat <- alpha_hat
+# plot_alpha_posterior(fit, facet_trace = T)
+```
+
+```{r}
+alpha
+apply(fit$mcmc_chains[[chain]]$alpha_out_thin, c(1, 2), mean)
+```
+
+
+Do each layer manually:
+(a bit sticky but good posterior estimated of true values)
+
+
+```{r echo=FALSE, fig.height=4, fig.width=10}
+for(k in 1:K) {
+  for(t in 1:TT) {
+      df <- data.frame(i = 1:fit$num_samples, alpha = fit$mcmc_chains[[chain]]$alpha_out_thin[k, t, ])
+    p1 <- ggplot(df) +
+      geom_line(aes(i, alpha), colour = "steelblue", linewidth = 0.5, alpha = 0.8, show.legend = F) +
+      geom_hline(yintercept = alpha[k, t], colour = "black", linetype = 1) + # true
+      geom_hline(yintercept = fit$alpha_hat[k, t], colour = "black", linetype = 2) + # posterior mean
+      labs(x = "i", y = "alpha",
+           title = paste0("True alpha: ", round(alpha[k, t], 2), "; posterior mean: ", round(apply(fit$mcmc_chains[[chain]]$alpha_out_thin, c(1, 2), mean)[k, t], 2)))
+    
+    p2 <- ggAcf2(fit$mcmc_chains[[chain]]$alpha_out_thin[k, t, ]) +
+      ggtitle("ACF of alpha")
+    print(p1 + p2)
+  }
+}
+```
+
+## Acceptance rates
+
+alpha:
+
+```{r}
+fit$mcmc_chains[[chain]]$alpha_acc_mean
+fit$mcmc_chains[[chain]]$eta_alpha_i
+```
+
+$Z_t$:
+
+```{r}
+fit$mcmc_chains[[chain]]$Z_acc_mean %>% round(2)
+```
+
+## Estimated latent positions
+
+Procrustes correlation for each time point:
+
+```{r}
+walk(1:TT, function(t) print(paste0("t = ", t, ": ", round(vegan::protest(Z[ , , t], fit$Z_hat_t[ , , t])$t0, 3))))
+
+# Procrustes correlation of the stacked matrices:
+# (first I need to take the posterior mean of the stacked and transformed samples, the Z_trans matrix was already made above)
+Z_trans_mean <- matrix(NA, nrow = dim(fit$Z_trans)[1], ncol = dim(fit$Z_trans)[2])
+for(i in 1:(n*TT)) {
+  for(j in 1:2) {
+    Z_trans_mean[i, j] <- mean(fit$Z_trans[i, j, ])
+  }
+}
+
+# Construct stacked matrix of the true Z matrices:
+Z_stack_true <- matrix(NA, nrow = n*TT, ncol = d)
+for(t in 1:TT) {
+  Z_stack_true[((t - 1)*n + 1):(t*n), ] <- Z[ , , t] # These indexes look weird but they are correct:
+}
+
+# Compare to the stacked true matrices:
+paste0("Correlation of stacked matrices (nT x 2): ", round(vegan::protest(Z_stack_true, Z_trans_mean)$t0, 3))
+```
+
+This is the true node trajectories compared to the posterior estimates after
+Procrustes transformation using the true values as reference:
+(the same "stacking" method is used again here)
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+# Construct the nT x 2 reference matrix of all the stacked (true) Z_t matrices:
+Z_ref <- matrix(NA, nrow = n*TT, ncol = 2)
+for(t in 1:TT) {
+  Z_ref[((t - 1)*n + 1):(t*n), ] <- Z[ , , t] # These indexes look weird but they are correct:
+}
+
+# Transform:
+# I originally used Z_stack here but I think it's fine to use _trans again here since they are just a rotation of Z_stack anyway. I haven't returned Z_stack so I will just use Z_trans.
+Z_trans <- array(NA, dim = dim(fit$Z_trans)) # Array to store the transformed samples dim = (nT, 2, num_samples)
+for(i in 1:dim(Z_trans)[3]) {
+  Z_trans[ , , i] <- procrustes(X = Z_ref, Y = fit$Z_trans[ , , i], scale = FALSE)$Yrot
+}
+
+# Unstack the matrices again:
+Z_trans_t <- array(NA, dim = dim(fit$mcmc_chains[[chain]]$Z_out_thin))
+for(t in 1:TT) {
+  Z_trans_t[ , , t, ] <- Z_trans[((t - 1)*n + 1):(t*n), , ]
+}
+
+# Posterior means for each Zt:
+Z_hat_t2 <- array(NA, dim = dim(Z_trans_t[ , , , 1]))
+for(t in 1:TT) {
+  for(i in 1:n) {
+    for(j in 1:2) {
+      Z_hat_t2[i, j, t] <- mean(Z_trans_t[i, j, t, ])
+    }
+  }
+}
+
+df1 <- plyr::alply(Z, .margins = 3) %>% # https://stackoverflow.com/a/20199008
+  map(data.frame) %>% 
+  bind_rows(.id = "t") %>% 
+  mutate(t = as.numeric(t), i = rep(1:n, dim(Z)[3])) %>% 
+  set_names(c("t", "z1", "z2", "i")) %>% 
+  mutate(set = "true")
+
+df2 <- plyr::alply(Z_hat_t2, .margins = 3) %>% # https://stackoverflow.com/a/20199008
+  map(data.frame) %>% 
+  bind_rows(.id = "t") %>% 
+  mutate(t = as.numeric(t), i = rep(1:n, dim(Z)[3])) %>% 
+  set_names(c("t", "z1", "z2", "i")) %>% 
+  mutate(set = "estimated")
+
+p <- rbind(df1, df2) %>% 
+  mutate(set = factor(set, levels = c("true", "estimated"))) %>% 
+  ggplot() +
+  geom_path_interactive(aes(z1, z2, group = i, colour = t, tooltip = paste0("node ", i), data_id = paste0("node ", i)),
+                        hover_css = "stroke:indianred;stroke-width:2", 
+                        arrow = arrow(length = unit(1.5, "mm"))) +
+  facet_wrap(~set, )
+girafe(ggobj = p, width_svg = 12, height_svg = 6) %>% 
+  girafe_options(opacity = 0.2)
+```
+
+Compare estimated latent positions at each time point:
+(the positions have already been rotated with reference to the true positions)
+
+TODO:
+Add the comaprison of time points and layers using the code above where I generate the data
+and this code for the comparison.
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+(plot_lpm_dynamic(Y, Z, alpha) + ggtitle("True")) + (plot_lpm_dynamic(Y, Z_hat_t2, round(alpha_hat, 2)) + ggtitle("Estimated"))
+```
+
+
+## Posterior Predictive Checks
+
+No. of edges (points in plot):
+
+```{r}
+choose(n, 2) * k * TT 
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=12}
+Y_hat <- data.frame()
+
+for(k in 1:K) {
+  for(t in 1:TT) {
+    Y_hat <- rbind(Y_hat, # previous data frame
+                   cbind(set = "sim", t, k, fit$mcmc_chains[[1]]$Y_hat[ , , t, k]), # simulated data for time t and layer k (the post. pred samples)
+                   cbind(set = "obs", t, k, t(as.matrix(Y[ , , t, k] %>% upper_tri()))))
+  }
+}
+
+p1 <- pivot_longer(Y_hat, cols = starts_with("V")) %>% 
+  mutate(value = as.numeric(value)) %>% 
+  rename(edge = name) %>% 
+  group_by(set, t, k, edge) %>% 
+  summarise(value = mean(value)) %>% 
+  pivot_wider(names_from = set, values_from = value) %>% 
+  mutate(diff = abs(obs - sim)) %>% 
+  ggplot() +
+  geom_abline(alpha = 0.5) +
+  geom_point(aes(obs, sim), colour = "steelblue", alpha = 0.25)
+
+p2 <- pivot_longer(Y_hat, cols = starts_with("V")) %>% 
+  mutate(value = as.numeric(value)) %>% 
+  rename(edge = name) %>% 
+  group_by(set, t, k, edge) %>% 
+  summarise(value = mean(value)) %>% 
+  pivot_wider(names_from = set, values_from = value) %>% 
+  mutate(diff = abs(obs - sim)) %>% 
+  ggplot() +
+  geom_abline(alpha = 0.5) +
+  geom_point(aes(obs + 1, sim + 1), colour = "steelblue", alpha = 0.25) +
+  scale_x_log10() +
+  scale_y_log10()
+
+p1 + p2
+```
+
+
+
