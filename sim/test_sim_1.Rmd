@@ -22,7 +22,7 @@ set.seed(4)
 d <- 2 # no. of latent dimensions
 n <- 25 # nodes
 K <- 5 # Layers
-TT <- 25 # T time points
+TT <- 20 # T time points
 
 # Initialise the latent positions, Z_1, which are the same for each layer:
 sigma2_0 <- 25 # the variance for the initial positions (tau in Sewell thesis)
@@ -414,3 +414,6 @@ bind_rows(list(true = data.frame(cbind(k = c(1:K), alpha)), initial = data.frame
   geom_line(aes(t, alpha_kt, group = set_k, colour = set)) +
   facet_wrap(~k, scales = "fixed")
 ```
+
+
+
